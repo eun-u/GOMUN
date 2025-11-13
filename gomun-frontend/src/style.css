@@ -1,0 +1,52 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&display=swap');
+
+:root {
+  font-family: Manrope, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #0f172a;
+  background-color: #f8fafc;
+  --surface: #ffffff;
+  --border: #eaeef5;
+  --muted: #667085;
+  --accent: #5b6cfa; /* legacy */
+  --indigo: #6366f1;
+  --mint: #10b981;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* { box-sizing: border-box }
+html, body, #app { height: 100% }
+body { margin: 0 }
+
+a { color: inherit }
+button { font-family: inherit }
+
+/* Reset lists */
+ul, ol { padding: 0; margin: 0 }
+li { list-style: none }
+
+/* Utility */
+.container { max-width: 1200px; margin: 0 auto; padding: 0 16px }
+
+/* App background (applies to all pages) */
+body { background: #f8fafc }
+body::before {
+  content: "";
+  position: fixed; inset: 0; z-index: -1;
+  background: radial-gradient(900px 500px at 10% -10%, #eef2ff 0%, rgba(238,242,255,0) 60%),
+              radial-gradient(800px 480px at 95% 0%, #ecfeff 0%, rgba(236,254,255,0) 60%),
+              linear-gradient(#f8fafc, #ffffff);
+}
+
+/* Dark theme: background only darker, cards stay light */
+html[data-theme='dark'] :root { color: #e2e8f0 }
+html[data-theme='dark'] body { background: #0b1220; color: #e2e8f0 }
+html[data-theme='dark'] body::before {
+  background: radial-gradient(900px 500px at 10% -10%, rgba(63,76,156,.35) 0%, rgba(63,76,156,0) 60%),
+              radial-gradient(800px 480px at 95% 0%, rgba(17,94,89,.35) 0%, rgba(17,94,89,0) 60%),
+              linear-gradient(#0b1220, #0f172a);
+}
