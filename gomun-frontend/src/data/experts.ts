@@ -97,3 +97,27 @@ export const experts: Expert[] = [
     website: 'https://people.gomun.kr',
   },
 ]
+
+const emailToId = new Map<string, number>()
+experts.forEach((ex) => {
+  if (ex.email) emailToId.set(ex.email, ex.id)
+})
+
+let nextExpertId = Math.max(...experts.map((ex) => ex.id)) + 1
+
+export function registerDynamicExpert(data: Omit<Expert, 'id'>): Expert {
+  if (data.email && emailToId.has(data.email)) {
+    const target = experts.find((ex) => ex.email === data.email)
+    if (target) {
+      Object.assign(target, data)
+      return target
+    }
+  }
+  const expert: Expert = {
+    id: nextExpertId++,
+    ...data,
+  }
+  experts.push(expert)
+  if (expert.email) emailToId.set(expert.email, expert.id)
+  return expert
+}

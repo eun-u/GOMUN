@@ -18,10 +18,10 @@ app.add_middleware(
   allow_headers=["*"],
 )
 
-users = [
-  {"role": "expert", "name": "김한울", "email": "hanul@gomun.kr", "password": "gomun123"},
-  {"role": "company", "name": "고문매칭 기업", "email": "company@gomun.kr", "password": "gomun123"},
-]
+# users = [
+#   {"role": "expert", "name": "김한울", "email": "hanul@gomun.kr", "password": "gomun123"},
+#   {"role": "company", "name": "고문매칭 기업", "email": "company@gomun.kr", "password": "gomun123"},
+# ]
 
 
 @app.post('/api/login')

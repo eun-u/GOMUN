@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted, inject } from 'vue'
+import type { Ref } from 'vue'
 import { experts } from '../data/experts'
 import { fetchProfile, updateProfile } from '../services/profile'
+import type { StoredSession } from '../utils/session'
 
 const defaultProfile = {
   name: '김한울',
@@ -15,19 +17,14 @@ const defaultProfile = {
   bio: '',
 }
 
-const session = computed(() => {
-  if (typeof window === 'undefined') return null
-  try {
-    const raw = window.localStorage.getItem('gomun:user')
-    return raw ? JSON.parse(raw) : null
-  } catch {
-    return null
-  }
-})
+const fallbackSession = ref<StoredSession | null>(null)
+const injectedSession = inject<Ref<StoredSession | null>>('session', fallbackSession)
+const session = computed(() => injectedSession?.value ?? null)
 
 const baseExpert = computed(() => {
-  if (!session.value?.email) return null
-  return experts.find((expert) => expert.email === session.value.email)
+  const email = session.value?.email
+  if (!email) return null
+  return experts.find((expert) => expert.email === email)
 })
 
 type ProfileState = {
@@ -60,11 +57,13 @@ const error = ref('')
 const success = ref('')
 
 async function loadProfile() {
-  if (!session.value?.email) return
+  const email = session.value?.email
+  const token = session.value?.token
+  if (!email || !token) return
   loading.value = true
   error.value = ''
   try {
-    const data = await fetchProfile(session.value.email)
+    const data = await fetchProfile(email, token)
     Object.assign(profile, { ...profile, ...data })
     Object.assign(form, {
       focus: data.focus ?? '',
@@ -80,17 +79,19 @@ async function loadProfile() {
 }
 
 async function saveProfile() {
-  if (!session.value?.email) return
+  const email = session.value?.email
+  const token = session.value?.token
+  if (!email || !token) return
   saving.value = true
   success.value = ''
   error.value = ''
   try {
-    const data = await updateProfile(session.value.email, {
+    const data = await updateProfile(email, {
       focus: form.focus,
       phone: form.phone,
       website: form.website,
       bio: form.bio,
-    })
+    }, token)
     Object.assign(profile, { ...profile, ...data })
     success.value = '저장되었습니다.'
   } catch (err) {

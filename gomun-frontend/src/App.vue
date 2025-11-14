@@ -1,221 +1,325 @@
 <script setup lang="ts">
-
-import { reactive, ref, watchEffect, watch, computed } from 'vue'
-
+import { reactive, ref, watchEffect, watch, computed, provide } from 'vue'
 import { RouterView, RouterLink, useRouter, useRoute } from 'vue-router'
 
 import MenuToggle from './components/MenuToggle.vue'
-
 import SideNav from './components/SideNav.vue'
-
-import { login, register, type Role } from './services/auth'
-
-
+import NotificationsPanel from './components/NotificationsPanel.vue'
+import { login, register } from './services/auth'
+import type { AuthResponse, RegisterPayload, Role } from './services/auth'
+import { clearSession, isSessionExpired, readSession, saveSession } from './utils/session'
+import type { StoredSession } from './utils/session'
+import { notificationSeed } from './data/notifications'
+import type { NotificationItem } from './data/notifications'
+import { fetchNotifications, markNotification } from './services/notifications'
 
 const router = useRouter()
-
 const route = useRoute()
 
-
-
 const sideOpen = ref(false)
-
 const showAbout = ref(false)
-
 const showAuth = ref(false)
-
+const showNotifications = ref(false)
 const dark = ref(false)
-
-
+const notice = ref('')
+let noticeTimer: ReturnType<typeof setTimeout> | null = null
 
 const tabs = [
-
   { label: 'Home', to: '/' },
-
   { label: 'Overview', to: '/overview' },
-
   { label: 'Requests', to: '/requests' },
-
   { label: 'Experts', to: '/experts' },
-
   { label: 'Insights', to: '/insights' },
-
 ]
-
-
 
 const roleOptions: Array<{ value: Role; label: string }> = [
-
   { value: 'guest', label: '게스트' },
-
   { value: 'expert', label: '전문가' },
-
   { value: 'company', label: '기업' },
-
 ]
 
-
-
 const roleCopy: Record<Role, { label: string; description: string; avatar: string }> = {
-
   guest: { label: '게스트', description: '둘러보기 전용', avatar: '/images/av1.svg' },
-
   expert: { label: '전문가', description: '프로필/지원 가능', avatar: '/images/av3.svg' },
-
   company: { label: '기업', description: '요청 생성/매칭', avatar: '/images/av5.svg' },
-
 }
 
-
-
-type Session = { token: string; role: Role; name: string; email: string }
-
-const stored = typeof window !== 'undefined' ? window.localStorage.getItem('gomun:user') : null
-
-const currentUser = ref<Session | null>(stored ? JSON.parse(stored) : null)
+const stored = readSession()
+const initialSession = stored && !isSessionExpired(stored) ? stored : null
+if (stored && isSessionExpired(stored)) clearSession()
+const currentUser = ref<StoredSession | null>(initialSession)
+provide('session', currentUser)
 
 watch(currentUser, (val) => {
+  saveSession(val)
+})
 
-  if (val) localStorage.setItem('gomun:user', JSON.stringify(val))
-
-  else localStorage.removeItem('gomun:user')
-
+const guestNotifications = notificationSeed.guest
+const apiNotifications = ref<NotificationItem[]>([])
+const notificationsLoading = ref(false)
+const notificationsError = ref('')
+const notifications = computed(() => (currentUser.value ? apiNotifications.value : guestNotifications))
+const unreadNotifications = computed(() => notifications.value.filter((item) => !item.read).length)
+const notificationRoleLabel = computed(() => {
+  if (!currentUser.value) return '게스트'
+  return roleCopy[currentUser.value.role]?.label ?? '사용자'
 })
 
 const activeRole = computed(() => (currentUser.value ? roleCopy[currentUser.value.role] : null))
 
-
-
 const authMode = ref<'login' | 'register'>('login')
-
 const authRole = ref<Role>('expert')
-
-const authForm = reactive({ name: '', email: '', password: '' })
-
+const authForm = reactive({
+  name: '',
+  email: '',
+  password: '',
+  confirm: '',
+  specialty: '',
+  companyName: '',
+})
+const termsAccepted = ref(false)
 const authLoading = ref(false)
-
 const authError = ref('')
 
+const GUEST_SESSION_MS = 30 * 60 * 1000
+const FALLBACK_SESSION_SECONDS = 60 * 60
 
+function showNotice(message: string, autoOpenAuth = false) {
+  notice.value = message
+  if (noticeTimer) clearTimeout(noticeTimer)
+  noticeTimer = setTimeout(() => {
+    notice.value = ''
+  }, 5000)
+  if (autoOpenAuth) openAuth('login')
+}
 
-watchEffect(() => {
+function formatRelativeTime(input?: string) {
+  if (!input) return ''
+  const date = new Date(input)
+  if (Number.isNaN(date.getTime())) return ''
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000)
+  if (seconds < 60) return '방금 전'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}분 전`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}시간 전`
+  const days = Math.floor(hours / 24)
+  return `${days}일 전`
+}
 
-  const html = document.documentElement
+async function loadNotifications() {
+  if (!currentUser.value) {
+    apiNotifications.value = []
+    return
+  }
+  notificationsLoading.value = true
+  notificationsError.value = ''
+  try {
+    const data = await fetchNotifications(currentUser.value.token)
+    apiNotifications.value = data.map((item) => ({
+      id: item.id,
+      title: item.title,
+      message: item.message,
+      tag: item.tag,
+      actionRoute: item.actionRoute,
+      read: item.read,
+      createdAt: item.createdAt,
+      time: formatRelativeTime(item.createdAt),
+      from: item.from,
+    }))
+  } catch (err) {
+    notificationsError.value = err instanceof Error ? err.message : '알림을 불러오지 못했습니다.'
+  } finally {
+    notificationsLoading.value = false
+  }
+}
 
-  if (dark.value) html.setAttribute('data-theme', 'dark')
+function buildSession(response: AuthResponse): StoredSession {
+  const ttl = Math.max(response.expiresIn || FALLBACK_SESSION_SECONDS, 60)
+  return {
+    token: response.token,
+    role: response.role,
+    name: response.name,
+    email: response.email,
+    expiresAt: Date.now() + ttl * 1000,
+  }
+}
 
-  else html.removeAttribute('data-theme')
+function toggleNotifications() {
+  showNotifications.value = !showNotifications.value
+  if (showNotifications.value && currentUser.value) loadNotifications()
+}
 
-})
+function closeNotifications() {
+  showNotifications.value = false
+}
 
+async function markAllNotificationsRead() {
+  if (!notifications.value.length) return
+  if (!currentUser.value) {
+    notifications.value.forEach((item) => (item.read = true))
+    return
+  }
+  const token = currentUser.value.token
+  const unread = apiNotifications.value.filter((item) => !item.read)
+  await Promise.all(unread.map((item) => markNotification(token, item.id, true).catch(() => null)))
+  unread.forEach((item) => (item.read = true))
+}
 
+async function handleNotificationAction(item: NotificationItem) {
+  if (!currentUser.value) {
+    showNotifications.value = false
+    openAuth('login')
+    return
+  }
+  if (!item.read) {
+    try {
+      await markNotification(currentUser.value.token, item.id, true)
+      item.read = true
+    } catch (err) {
+      console.error(err)
+    }
+  }
+  showNotifications.value = false
+  if (item.actionRoute) router.push(item.actionRoute)
+}
 
 function handleProfileClick() {
-
-  if (!currentUser.value) openAuth('login')
-
-  else router.push('/profile')
-
+  if (!currentUser.value) {
+    showNotice('로그인이 필요한 서비스입니다.', true)
+    return
+  }
+  router.push('/profile')
 }
-
-
 
 function openAuth(mode: 'login' | 'register' = 'login') {
-
   authMode.value = mode
-
-  authForm.name = ''
-
-  authForm.email = ''
-
-  authForm.password = ''
-
+  Object.assign(authForm, { name: '', email: '', password: '', confirm: '', specialty: '', companyName: '' })
+  termsAccepted.value = false
   authError.value = ''
-
   showAuth.value = true
-
 }
-
-
 
 function closeAuth() {
-
   showAuth.value = false
-
 }
-
-
 
 function loginAsGuest() {
-
-  currentUser.value = { token: `guest-${Date.now()}`, role: 'guest', name: '게스트', email: 'guest@gomun.kr' }
-
+  currentUser.value = {
+    token: `guest-${Date.now()}`,
+    role: 'guest',
+    name: '게스트',
+    email: 'guest@gomun.kr',
+    expiresAt: Date.now() + GUEST_SESSION_MS,
+  }
   showAuth.value = false
-
+  showNotice('게스트 모드로 로그인했습니다.')
+  apiNotifications.value = []
+  notificationsError.value = ''
 }
 
-
+function validateAuthForm() {
+  if (authMode.value !== 'register') return
+  if (!termsAccepted.value) throw new Error('개인정보 처리방침에 동의해 주세요.')
+  if (authForm.password !== authForm.confirm) throw new Error('비밀번호 확인이 일치하지 않습니다.')
+  const strongPassword = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/
+  if (!strongPassword.test(authForm.password)) throw new Error('비밀번호는 8자 이상, 영문+숫자를 포함해야 합니다.')
+  if (!authForm.name.trim()) throw new Error('이름을 입력해 주세요.')
+  if (authRole.value === 'company' && !authForm.companyName.trim()) throw new Error('기업명을 입력해 주세요.')
+  if (authRole.value === 'expert' && !authForm.specialty.trim()) throw new Error('전문 분야를 입력해 주세요.')
+}
 
 async function submitAuth() {
-
   authError.value = ''
-
   authLoading.value = true
-
   try {
-
-    let session: Session
-
+    validateAuthForm()
+    let response: AuthResponse
     if (authMode.value === 'login') {
-
-      session = await login(authRole.value, authForm.email, authForm.password)
-
+      response = await login(authRole.value, authForm.email, authForm.password)
     } else {
-
-      session = await register(authRole.value, authForm.name, authForm.email, authForm.password)
-
+      const payload: RegisterPayload = {
+        role: authRole.value,
+        name: authForm.name,
+        email: authForm.email,
+        password: authForm.password,
+      }
+      if (authRole.value === 'company') payload.companyName = authForm.companyName.trim()
+      if (authRole.value === 'expert') payload.specialty = authForm.specialty.trim()
+      response = await register(payload)
     }
-
-    currentUser.value = session
-
+    currentUser.value = buildSession(response)
     showAuth.value = false
-
+    showNotice('정상적으로 인증되었습니다.')
   } catch (err) {
-
     authError.value = err instanceof Error ? err.message : '처리 중 문제가 발생했습니다.'
-
   } finally {
-
     authLoading.value = false
-
   }
-
 }
 
-
-
-function logout() {
-
+function logout(message?: string) {
   currentUser.value = null
-
+  clearSession()
+  apiNotifications.value = []
+  notificationsError.value = ''
+  if (message) showNotice(message, true)
 }
 
-
+watchEffect(() => {
+  if (currentUser.value && isSessionExpired(currentUser.value)) {
+    logout('세션이 만료되었습니다. 다시 로그인해 주세요.')
+  }
+})
 
 watch(
-
-  () => route.path,
-
-  (p) => {
-
-    if (p === '/requests' || p === '/experts') sideOpen.value = true
-
+  () => currentUser.value,
+  (session) => {
+    showNotifications.value = false
+    if (session) loadNotifications()
+    else {
+      apiNotifications.value = []
+      notificationsError.value = ''
+    }
   },
-
   { immediate: true },
-
 )
 
+function removeAuthQuery() {
+  if (!route.query.auth) return
+  const nextQuery = { ...route.query }
+  delete nextQuery.auth
+  router.replace({ query: nextQuery })
+}
+
+watch(
+  () => route.query.auth,
+  (val) => {
+    if (!val) return
+    const reason = Array.isArray(val) ? val[0] : val
+    if (!reason) return
+    if (reason === 'required') showNotice('로그인이 필요한 서비스입니다.', true)
+    else if (reason === 'expired') showNotice('세션이 만료되었습니다. 다시 로그인해 주세요.', true)
+    else if (reason === 'forbidden') showNotice('접근 권한이 없습니다.')
+    removeAuthQuery()
+  },
+  { immediate: true },
+)
+
+watchEffect(() => {
+  const html = document.documentElement
+  if (dark.value) html.setAttribute('data-theme', 'dark')
+  else html.removeAttribute('data-theme')
+})
+
+watch(
+  () => route.path,
+  (p) => {
+    if (p === '/requests' || p === '/experts') sideOpen.value = true
+    showNotifications.value = false
+  },
+  { immediate: true },
+)
 </script>
 
 
@@ -274,7 +378,13 @@ watch(
 
         </button>
 
-        <button class="icon" aria-label="Notifications" title="Notifications">
+        <button
+          class="icon notif-toggle"
+          aria-label="Notifications"
+          title="Notifications"
+          :aria-expanded="showNotifications"
+          @click="toggleNotifications"
+        >
 
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
 
@@ -290,6 +400,8 @@ watch(
 
           </svg>
 
+          <span class="notif-dot" v-if="unreadNotifications">{{ unreadNotifications }}</span>
+
         </button>
 
         <div class="role-pill" v-if="activeRole">
@@ -300,7 +412,7 @@ watch(
 
         </div>
 
-        <button class="link" v-if="currentUser" @click="logout">Logout</button>
+        <button class="link" v-if="currentUser" @click="() => logout()">Logout</button>
 
         <button class="link" v-else @click="openAuth('login')">Login</button>
 
@@ -323,6 +435,40 @@ watch(
       </div>
 
     </header>
+
+    <div class="app__notice" v-if="notice">
+
+      {{ notice }}
+
+    </div>
+
+    <transition name="fade">
+
+      <NotificationsPanel
+
+        v-if="showNotifications"
+
+        :items="notifications"
+
+        :role-label="notificationRoleLabel"
+
+        :unread="unreadNotifications"
+
+        :loading="notificationsLoading"
+
+        :error="notificationsError"
+
+        @close="closeNotifications"
+
+        @mark="markAllNotificationsRead"
+
+        @open-action="handleNotificationAction"
+
+      />
+
+    </transition>
+
+    <div class="notif-overlay" v-if="showNotifications" @click="closeNotifications"></div>
 
 
 
@@ -388,7 +534,7 @@ watch(
 
                 <span>이름</span>
 
-                <input v-model="authForm.name" placeholder="홍길동" required />
+                <input v-model="authForm.name" placeholder="홍길동" autocomplete="name" required />
 
               </label>
 
@@ -396,7 +542,7 @@ watch(
 
                 <span>이메일</span>
 
-                <input type="email" v-model="authForm.email" placeholder="email@gomun.kr" required />
+                <input type="email" v-model="authForm.email" placeholder="email@gomun.kr" autocomplete="email" required />
 
               </label>
 
@@ -404,13 +550,45 @@ watch(
 
                 <span>비밀번호</span>
 
-                <input type="password" v-model="authForm.password" placeholder="********" required />
+                <input type="password" v-model="authForm.password" placeholder="********" autocomplete="new-password" required />
+
+              </label>
+
+              <label v-if="authMode === 'register'">
+
+                <span>비밀번호 확인</span>
+
+                <input type="password" v-model="authForm.confirm" placeholder="********" autocomplete="new-password" required />
+
+              </label>
+
+              <label v-if="authMode === 'register' && authRole === 'expert'">
+
+                <span>전문 분야</span>
+
+                <input v-model="authForm.specialty" placeholder="예: 전략/PMO" />
+
+              </label>
+
+              <label v-if="authMode === 'register' && authRole === 'company'">
+
+                <span>기업명</span>
+
+                <input v-model="authForm.companyName" placeholder="고문컴퍼니" />
+
+              </label>
+
+              <label class="terms" v-if="authMode === 'register'">
+
+                <input type="checkbox" v-model="termsAccepted" />
+
+                <span>개인정보 처리방침 및 이용약관에 동의합니다.</span>
 
               </label>
 
               <p class="auth__error" v-if="authError">{{ authError }}</p>
 
-              <button class="primary" type="submit" :disabled="authLoading">
+              <button class="primary" type="submit" :disabled="authLoading || (authMode === 'register' && !termsAccepted)">
 
                 {{ authLoading ? '처리 중...' : authMode === 'login' ? '로그인' : '회원가입' }}
 
@@ -473,6 +651,7 @@ watch(
 .app {
 
   --header-h: 56px;
+  position: relative;
 
 }
 
@@ -702,6 +881,28 @@ watch(
 
 }
 
+.app__notice {
+
+  margin: 12px auto 0;
+
+  max-width: 960px;
+
+  background: rgba(163, 230, 53, 0.2);
+
+  border: 1px solid rgba(163, 230, 53, 0.6);
+
+  border-radius: 12px;
+
+  padding: 10px 16px;
+
+  font-size: 14px;
+
+  color: #1f2d11;
+
+  box-shadow: 0 6px 30px rgba(15, 23, 42, 0.05);
+
+}
+
 .link {
 
   border: 0;
@@ -717,6 +918,72 @@ watch(
 .link:hover {
 
   color: #0f172a;
+
+}
+
+.notif-toggle {
+
+  position: relative;
+
+}
+
+.notif-dot {
+
+  position: absolute;
+
+  top: -4px;
+
+  right: -4px;
+
+  min-width: 16px;
+
+  height: 16px;
+
+  padding: 0 4px;
+
+  background: #ef4444;
+
+  color: #fff;
+
+  font-size: 10px;
+
+  border-radius: 999px;
+
+  display: inline-flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  font-weight: 700;
+
+}
+
+.notif-overlay {
+
+  position: fixed;
+
+  inset: 0;
+
+  background: transparent;
+
+  z-index: 25;
+
+}
+
+.fade-enter-active,
+.fade-leave-active {
+
+  transition: opacity 0.2s ease, transform 0.2s ease;
+
+}
+
+.fade-enter-from,
+.fade-leave-to {
+
+  opacity: 0;
+
+  transform: translateY(-6px);
 
 }
 
@@ -944,6 +1211,28 @@ watch(
 
 }
 
+.auth__form label.terms {
+
+  flex-direction: row;
+
+  align-items: center;
+
+  gap: 8px;
+
+  font-size: 13px;
+
+  color: #1f2937;
+
+}
+
+.auth__form label.terms input[type='checkbox'] {
+
+  width: 16px;
+
+  height: 16px;
+
+}
+
 .auth__form input {
 
   border: 1px solid var(--border);
@@ -1029,4 +1318,3 @@ watch(
 }
 
 </style>
-

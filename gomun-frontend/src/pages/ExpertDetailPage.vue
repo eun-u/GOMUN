@@ -1,40 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
 import { experts } from '../data/experts'
-import { fetchProfile } from '../services/profile'
 
 const route = useRoute()
 const expert = computed(() => experts.find((item) => item.id === Number(route.params.id)))
-const profile = ref<any>(null)
-const error = ref('')
-
-async function loadProfile() {
-  if (!expert.value?.email) return
-  try {
-    profile.value = await fetchProfile(expert.value.email)
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '프로필을 불러오지 못했습니다.'
-  }
-}
-
-onMounted(loadProfile)
-watch(
-  () => route.params.id,
-  () => {
-    profile.value = null
-    error.value = ''
-    loadProfile()
-  },
-)
-
-const merged = computed(() => {
-  if (!expert.value) return null
-  return {
-    ...expert.value,
-    ...profile.value,
-  }
-})
+const merged = expert
 </script>
 
 <template>
@@ -66,7 +37,6 @@ const merged = computed(() => {
         <li><span>Website</span><strong>{{ merged.website }}</strong></li>
       </ul>
     </article>
-    <p class="error" v-if="error">{{ error }}</p>
   </section>
   <section class="detail" v-else>
     <p>전문가를 찾을 수 없습니다.</p>

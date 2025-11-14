@@ -2,7 +2,6 @@
 import { computed, reactive } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { Expert } from '../data/experts'
-import { experts } from '../data/experts'
 import { KOREAN_REGIONS } from '../data/options'
 
 const REGIONS = ['전국', ...KOREAN_REGIONS]
@@ -12,8 +11,11 @@ const filters = reactive({
   search: '',
 })
 
+const props = defineProps<{ experts: Expert[]; loading?: boolean; error?: string }>()
+const emit = defineEmits<{ 'send-request': [expert: Expert] }>()
+
 const filteredExperts = computed<Expert[]>(() =>
-  experts.filter((expert) => {
+  (props.experts || []).filter((expert) => {
     if (filters.region !== '전국' && expert.region !== filters.region) return false
     if (filters.search.trim()) {
       const term = filters.search.trim().toLowerCase()
@@ -23,6 +25,14 @@ const filteredExperts = computed<Expert[]>(() =>
     return true
   }),
 )
+
+function handleRequest(expert: Expert, event?: Event) {
+  if (event) {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+  emit('send-request', expert)
+}
 </script>
 
 <template>
@@ -49,7 +59,7 @@ const filteredExperts = computed<Expert[]>(() =>
 
     <div class="cards">
       <article v-for="expert in filteredExperts" :key="expert.id" class="card">
-        <RouterLink :to="`/experts/${expert.id}`">
+        <RouterLink :to="`/experts/${expert.id}`" class="card-link">
           <div class="hero">
             <img class="avatar" :src="expert.avatar" :alt="expert.name" />
           </div>
@@ -59,11 +69,13 @@ const filteredExperts = computed<Expert[]>(() =>
             <p class="meta">{{ expert.region }} · {{ expert.availability }}</p>
             <p class="rating">평점 {{ expert.rating.toFixed(1) }}</p>
           </div>
-          <button class="chip">Send 요청 보내기</button>
         </RouterLink>
+        <button class="chip" type="button" @click.stop.prevent="handleRequest(expert, $event)">Send 요청 보내기</button>
       </article>
     </div>
-    <p v-if="!filteredExperts.length" class="empty">조건에 맞는 전문가가 없습니다.</p>
+    <p v-if="loading" class="empty">전문가 정보를 불러오는 중입니다...</p>
+    <p v-else-if="error" class="empty error">{{ error }}</p>
+    <p v-else-if="!filteredExperts.length" class="empty">조건에 맞는 전문가가 없습니다.</p>
   </section>
 </template>
 
@@ -124,7 +136,7 @@ const filteredExperts = computed<Expert[]>(() =>
   overflow: hidden;
   box-shadow: 0 12px 20px rgba(15, 23, 42, 0.04);
 }
-.card a {
+.card-link {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -176,5 +188,8 @@ const filteredExperts = computed<Expert[]>(() =>
 .empty {
   text-align: center;
   color: var(--muted);
+}
+.empty.error {
+  color: #ef4444;
 }
 </style>

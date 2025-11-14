@@ -1,0 +1,50 @@
+{
+  "users": [
+    {
+      "role": "expert",
+      "name": "김한울",
+      "email": "hanul@gomun.kr",
+      "password": "Gomun123!",
+      "specialty": "전략/PMO"
+    },
+    {
+      "role": "company",
+      "name": "고문매칭 기업",
+      "email": "company@gomun.kr",
+      "password": "Gomun123!",
+      "companyName": "고문매칭"
+    },
+    {
+      "role": "expert",
+      "name": "test",
+      "email": "test@gmail.com",
+      "password": "qwer1234",
+      "companyName": "",
+      "specialty": "전략"
+    }
+  ],
+  "profiles": {
+    "hanul@gomun.kr": {
+      "name": "김한울",
+      "title": "전략 컨설턴트",
+      "region": "서울",
+      "focus": "대기업 HQ 전략실 및 중견기업 PMO 리드",
+      "availability": "즉시 투입",
+      "responseTime": "평균 4시간",
+      "phone": "010-1234-5678",
+      "website": "https://gomun.kr",
+      "bio": "하이-스킬 공백을 메우는 Zero-Gap HR 전문가입니다."
+    },
+    "test@gmail.com": {
+      "name": "test",
+      "title": "전략",
+      "region": "서울",
+      "focus": "전략",
+      "availability": "즉시 투입",
+      "responseTime": "평균 4시간",
+      "phone": "",
+      "website": "",
+      "bio": ""
+    }
+  }
+}
